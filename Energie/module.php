@@ -7,6 +7,7 @@ class Energie extends IPSModule
     public function Create()
     {
         parent::Create();
+        // Timer ist vorbereitet, aber aktuell nicht aktiv (0ms = deaktiviert)
         $this->RegisterTimer('DeployScriptsTimer', 0, 'SDP_DeployScripts($_IPS["TARGET"]);');
     }
 
@@ -14,61 +15,35 @@ class Energie extends IPSModule
     {
         parent::ApplyChanges();
 
-        // Verzeichnis vom Modul ermitteln
-        $moduleDir = IPS_GetKernelDir() . 'modules' . DIRECTORY_SEPARATOR . 'ImbaMDT.Energie' . DIRECTORY_SEPARATOR . 'scripts';
-    
-        // Nur wenn Verzeichnis existiert
-        if (is_dir($moduleDir)) {
-            $files = scandir($moduleDir);
-            foreach ($files as $file) {
-                if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-                    $ident = pathinfo($file, PATHINFO_FILENAME);
-                    $existingID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
-                    if ($existingID === false) {
-                        $scriptID = IPS_CreateScript(0);
-                        IPS_SetName($scriptID, $ident);
-                        IPS_SetIdent($scriptID, $ident);
-                        IPS_SetParent($scriptID, $this->InstanceID);
-    
-                        // Inhalt aus Datei laden und setzen
-                        $code = file_get_contents($moduleDir . DIRECTORY_SEPARATOR . $file);
-                        IPS_SetScriptContent($scriptID, $code);
-                    }
+        $this->SendDebug('Energie', 'Starte automatisches Skript-Deployment...', 0);
+
+        $moduleDir = __DIR__ . DIRECTORY_SEPARATOR . 'scripts';
+
+        if (!is_dir($moduleDir)) {
+            $this->SendDebug('Energie', 'Scripts-Verzeichnis nicht gefunden: ' . $moduleDir, 0);
+            return;
+        }
+
+        $files = scandir($moduleDir);
+        foreach ($files as $file) {
+            if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
+                $ident = pathinfo($file, PATHINFO_FILENAME);
+                $existingID = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+
+                if ($existingID === false) {
+                    $scriptID = IPS_CreateScript(0);
+                    IPS_SetName($scriptID, $ident);
+                    IPS_SetIdent($scriptID, $ident);
+                    IPS_SetParent($scriptID, $this->InstanceID);
+
+                    $code = file_get_contents($moduleDir . DIRECTORY_SEPARATOR . $file);
+                    IPS_SetScriptContent($scriptID, $code);
+
+                    $this->SendDebug('Energie', "Skript '$ident' neu erstellt (ID: $scriptID)", 0);
+                } else {
+                    $this->SendDebug('Energie', "Skript '$ident' existiert bereits (ID: $existingID)", 0);
                 }
             }
         }
     }
-
-    public function DeployScripts()
-    {
-        $scriptsDir = __DIR__ . '/scripts';
-        if (!is_dir($scriptsDir)) {
-            $this->SendDebug('Energie', 'Scripts-Verzeichnis nicht gefunden', 0);
-            return;
-        }
-
-        foreach (scandir($scriptsDir) as $file) {
-            if (pathinfo($file, PATHINFO_EXTENSION) !== 'php') {
-                continue;
-            }
-
-            $filePath = $scriptsDir . '/' . $file;
-            $scriptContent = file_get_contents($filePath);
-
-            $scriptName = 'SDP_' . pathinfo($file, PATHINFO_FILENAME);
-            $existingID = @IPS_GetObjectIDByName($scriptName, 0);
-
-            if ($existingID === false) {
-                $id = IPS_CreateScript(0);
-                IPS_SetName($id, $scriptName);
-                IPS_SetParent($id, 0);
-            } else {
-                $id = $existingID;
-            }
-
-            IPS_SetScriptContent($id, $scriptContent);
-            $this->SendDebug('Energie', "Skript $scriptName deployed (ID: $id)", 0);
-        }
-    }
-
 }
