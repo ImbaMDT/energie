@@ -1,6 +1,6 @@
 <?php
 /*
-    Lademanagement
+    Energiemanagement
     - Fair-Share-Prinzip
     - Priorisierungszeitraum
     - Farbige Anzeige
@@ -16,18 +16,16 @@ if ($_IPS['SENDER'] == "WebFront") {
 }
 
 // IDs deiner Variablen
-$VID_PV       = 57932; // PV-Leistung [kW]
-$VID_HOUSE    = 20250; // Hausverbrauch [kW]
-$VID_BATT_SOC = 47364; // Batterie-SOC [%]
-$VID_WB1_RD   = 35569; // Wallbox1 read [kW]
-$VID_WB2_RD   = 45392; // Wallbox2 read [kW]
-$VID_WB1_CONNECTED = 12345; // Neue Variable: Wallbox 1 verbunden (bool)
-$VID_WB2_CONNECTED = 23456; // Neue Variable: Wallbox 2 verbunden (bool)
-
-
-$VID_WB1_WR   = 21926; // Wallbox1 write
-$VID_WB2_WR   = 24750; // Wallbox2 write
-$VID_HEATPUMP = 47195; // Wärmepumpe write
+$VID_PV       = 57932;
+$VID_HOUSE    = 20250;
+$VID_BATT_SOC = 47364;
+$VID_WB1_RD   = 35569;
+$VID_WB2_RD   = 45392;
+$VID_WB1_CONNECTED = 12345;
+$VID_WB2_CONNECTED = 23456;
+$VID_WB1_WR   = 21926;
+$VID_WB2_WR   = 24750;
+$VID_HEATPUMP = 47195;
 
 $MAX_HAUS_KW = 60.0;
 $WB_MAX = ['wb1'=>11.0,'wb2'=>11.0];
@@ -70,8 +68,8 @@ $house  = GetValueFloat($VID_HOUSE);
 $batt   = GetValueFloat($VID_BATT_SOC);
 $wb1_rd = GetValueFloat($VID_WB1_RD);
 $wb2_rd = GetValueFloat($VID_WB2_RD);
-$hour = (int)date("G"); // Holt die aktuelle Stunde (0–23) direkt vom System
-$wb1_connected = GetValueBoolean($VID_WB1_CONNECTED); // $wb1_connected = (GetValueInteger($VID_WB1_CONNECTED) === 1);
+$hour = (int)date("G");
+$wb1_connected = GetValueBoolean($VID_WB1_CONNECTED);
 $wb2_connected = GetValueBoolean($VID_WB2_CONNECTED);
 
 $mode   = GetValueInteger($varMode);
@@ -94,9 +92,9 @@ switch ($mode) {
 $available_kW = max(0, min($available_kW, $MAX_HAUS_KW - $house));
 
 // Wärmepumpe
-$PV_MIN_UEBERSCHUSS = 1.0;  
-$BATT_FULL = 95;            
-$HEATPUMP_POWER = 3.0;      
+$PV_MIN_UEBERSCHUSS = 1.0;
+$BATT_FULL = 95;
+$HEATPUMP_POWER = 3.0;
 
 $pv_ueberschuss = $pv - $house - $wb1_rd - $wb2_rd;
 if ($pv_ueberschuss > $PV_MIN_UEBERSCHUSS && $batt >= $BATT_FULL) {
@@ -108,13 +106,11 @@ if ($pv_ueberschuss > $PV_MIN_UEBERSCHUSS && $batt >= $BATT_FULL) {
 
 // Fair-Share-Verteilung
 $wb_shares = ['wb1'=>0.0,'wb2'=>0.0];
-
 $activeWB = 0;
-
-if ($wb1_connected) $activeWB++; // $activeWB = ($wb1_connected ? 1 : 0) + ($wb2_connected ? 1 : 0); 
+if ($wb1_connected) $activeWB++;
 if ($wb2_connected) $activeWB++;
 
-if ($activeWB>0) {
+if ($activeWB > 0) {
     $share = $available_kW / $activeWB;
 
     if ($zeitfensterAktiv && $hour >= $PRIO_START && $hour < $PRIO_END) {
@@ -131,8 +127,8 @@ if ($activeWB>0) {
     $wb_shares['wb1'] = $wb1_share;
     $wb_shares['wb2'] = $wb2_share;
 } else {
-    RequestAction($VID_WB1_WR, 0);
-    RequestAction($VID_WB2_WR, 0);
+    $wb_shares['wb1'] = 0;
+    $wb_shares['wb2'] = 0;
     IPS_LogMessage("Lademanagement", "Keine Wallbox verbunden – kein Ladevorgang.");
 }
 
@@ -141,16 +137,36 @@ $totalPower = $house + $wb_shares['wb1'] + $wb_shares['wb2'] + ($heatpump_state=
 if ($totalPower > $MAX_HAUS_KW) {
     $factor = $MAX_HAUS_KW / $totalPower;
     foreach ($wb_shares as $k=>$v) $wb_shares[$k]=$v*$factor;
-    if ($wb1_connected) RequestAction($VID_WB1_WR,$wb_shares['wb1']);
-    if ($wb2_connected) RequestAction($VID_WB2_WR,$wb_shares['wb2']);
+}
+
+// Robuste Steuerung beider Wallboxen
+if ($wb1_connected) {
+    RequestAction($VID_WB1_WR, $wb_shares['wb1']);
+} else {
+    RequestAction($VID_WB1_WR, 0);
+}
+
+if ($wb2_connected) {
+    RequestAction($VID_WB2_WR, $wb_shares['wb2']);
+} else {
+    RequestAction($VID_WB2_WR, 0);
 }
 
 // Modusbeschreibung
 switch ($mode) {
-    case 1: $modeText = "PV nur (≥80 %)";        $modeColor = "#4CAF50"; break;
+    case 1: $modeText = "PV nur (≥80 %)"; $modeColor = "#4CAF50"; break;
     case 2: $modeText = "PV + Speicher (≥20 %)"; $modeColor = "#FFD700"; break;
     case 3: $modeText = "Volllast (Netz erlaubt)"; $modeColor = "#FF8C00"; break;
     default: $modeText = "Unbekannt"; $modeColor = "#999999"; break;
+}
+
+// Zeitfensterbeschreibung
+if (!$zeitfensterAktiv) {
+    $zeitText = "Deaktiviert";
+} elseif ($hour >= $PRIO_START && $hour < $PRIO_END) {
+    $zeitText = "Aktiv (08–18 Uhr)";
+} else {
+    $zeitText = "Aktiv (außerhalb)";
 }
 
 // Dashboard erzeugen
@@ -166,7 +182,7 @@ $html .= "<tr><td>Wallbox 1 (Kundenparkplatz):</td><td><b>".round($wb_shares['wb
 $html .= "<tr><td>Wallbox 2:</td><td><b>".round($wb_shares['wb2'],1)." kW</b></td></tr>";
 $html .= "<tr><td>Gesamtleistung:</td><td><b>".round($totalPower,1)." kW</b></td></tr>";
 $html .= "<tr><td>Lademodus:</td><td><b style='color:$modeColor;'>".$modeText."</b></td></tr>";
-$html .= "<tr><td>Zeitfenster:</td><td><b>".($zeitfensterAktiv?($hour>=$PRIO_START&&$hour<$PRIO_END?'Aktiv (08–18 Uhr)':'Aktiv (außerhalb)'):'Deaktiviert')."</b></td></tr>";
+$html .= "<tr><td>Zeitfenster:</td><td><b>$zeitText</b></td></tr>";
 $html .= "</table>";
 $html .= '<div style="margin-top:6px; font-size:11px; color:gray;">Stand: '.date("d.m.Y H:i").' Uhr</div>';
 $html .= '</div>';
