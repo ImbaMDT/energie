@@ -1,4 +1,11 @@
 <?php
+/*
+    Verbrauchsberechnung
+    - Berechnet gesamter Verbrauch
+    Programmierer: Mike Dorr
+    Projekt: HVG241 Meisterprüfung
+*/
+
 // Verbrauchsberechnung
 $batterie = GetValueFloat(36586);
 $grid = GetValueFloat(17862);
